@@ -1,0 +1,4 @@
+title = "Pinky public source: upstream secret detection rules"
+
+[extend]
+useDefault = true

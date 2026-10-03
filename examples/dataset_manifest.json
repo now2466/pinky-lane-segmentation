@@ -1,0 +1,10 @@
+{
+  "schema_version": "pinky-lane-dataset-v1",
+  "counts": {"train": 2, "val": 1, "test": 1},
+  "items": [
+    {"sample_id": "sample_train_legacy", "split": "train", "supervision_policy": "legacy_partial_class4", "source_group": "recording_train"},
+    {"sample_id": "sample_train_full", "split": "train", "supervision_policy": "fully_labeled_5class", "source_group": "recording_train"},
+    {"sample_id": "sample_val", "split": "val", "supervision_policy": "fully_labeled_5class", "source_group": "recording_val"},
+    {"sample_id": "sample_test", "split": "test", "supervision_policy": "fully_labeled_5class", "source_group": "recording_test"}
+  ]
+}
