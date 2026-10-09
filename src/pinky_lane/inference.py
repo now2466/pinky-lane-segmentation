@@ -4,6 +4,8 @@ import cv2
 import numpy as np
 import torch
 
+from .postprocess import correct_mask
+
 COLORS_BGR = {1: (255, 255, 0), 2: (0, 140, 255), 3: (255, 0, 255), 4: (0, 255, 0)}
 
 
@@ -17,10 +19,22 @@ def preprocess(bgr):
 
 @torch.inference_mode()
 def predict(model, frames, device, ignore_top):
+    return predict_details(model, frames, device, ignore_top)[0]
+
+
+@torch.inference_mode()
+def predict_details(model, frames, device, ignore_top, postprocess=None):
     batch = torch.stack([preprocess(frame) for frame in frames]).to(device)
-    masks = model(batch).argmax(1).cpu().numpy().astype(np.uint8)
+    logits = model(batch)
+    masks = logits.argmax(1).cpu().numpy().astype(np.uint8)
     masks[:, :ignore_top] = 255
-    return masks
+    raw = masks.copy()
+    stats = [{} for _ in frames]
+    if postprocess is not None:
+        probabilities = torch.softmax(logits, dim=1).cpu().numpy()
+        for i in range(len(frames)):
+            masks[i], stats[i] = correct_mask(raw[i], probabilities[i], postprocess)
+    return masks, raw, stats
 
 
 def overlay(bgr, mask, alpha=0.55):

@@ -119,6 +119,10 @@ pinky-train --config configs/train_5class_cpu.json --dataset data/track --output
 
 `--warm-start`는 모델 가중치를 초기값으로 읽으며 optimizer와 epoch는 새로 시작합니다. 중단된 optimizer 상태를 복구하는 resume 기능은 제공하지 않습니다.
 
+영상 추론의 선택적 오탐 보정은 `--postprocess-config configs/postprocess_conservative.json`,
+원본/보정 좌우 비교는 `--compare-raw`를 함께 지정합니다. 조건·한계는
+[후처리 명세](docs/model_and_training.md#선택적-공간-후처리)를 참고하세요. 기본 추론은 변경되지 않습니다.
+
 ## 평가, 추론, 내보내기
 
 학습 폴더의 `best.pt` 또는 별도로 준비한 가중치를 지정합니다. 아래 출력 경로는 실행 전 존재하지 않아야 합니다.
@@ -153,3 +157,34 @@ pre-commit은 Gitleaks `v8.30.1`과 `scripts/check_public_source.py`를 실행�
 - [데이터셋 형식](docs/dataset_format.md)
 - [모델 및 학습](docs/model_and_training.md)
 - [아키텍처 요약](docs/architecture-brief.md)
+
+## 모델 변경의 방지턱 오류 비교
+
+```bash
+python -m pinky_lane.compare_models --reference weights/original.pt --candidate weights/candidate.pt --dataset data/track --splits train val test --device cuda --output outputs/paired-errors
+```
+
+새 출력 폴더에 두 모델의 방지턱 TP/FP/FN, 정답 면적별 recall, 밝기·세로 위치,
+10pp 이상 IoU가 하락한 사례의 원본/정답/원본 모델/후보 모델 비교 이미지를 기록합니다.
+legacy 미라벨 배경은 방지턱 FP에서 제외하며 ROI는 적용하지 않습니다.
+면적별 통계는 **방지턱 양성 프레임만** 대상으로 한 진단값이므로 전체 클래스 IoU를
+대체하지 않습니다. 반복 검토한 test 결과는 독립 holdout 성능으로 해석하지 않습니다.
+
+방지턱 양성 픽셀이 batch CE에서 묻히는 경우 `training.bump_positive_weight`로
+fully-labeled 양성 프레임마다 평균한 추가 CE를 사용할 수 있습니다. 기본값은 0이며,
+`bump_positive_small_weight`는 `small_bump_max_pixels` 이하 양성 프레임을 강조합니다.
+`augmentation.bump_crop_probability`(기본 0)와 `bump_crop_min_scale`(기본 0.7)은 모든
+정답 방지턱을 포함하는 crop을 이미지·마스크에 함께 적용합니다. 기존 320 이미지를
+재표본화하는 augmentation이며 원본 해상도 세부 정보가 생기는 것은 아닙니다.
+
+`training.save_best_trained: true`는 기존 `best.pt`와 별도로 per-class validation
+안전 기준을 만족한 학습 epoch 중 최고 점수의 `best-trained.pt`를 남깁니다.
+초기 모델보다 못한 실제 학습 결과도 분석할 수 있으며 자동 배포·승인 기능이 아닙니다.
+같은 옵션은 guard 통과 여부와 별도로 최고 validation 점수의 `best-experimental.pt`도
+보존합니다. guard 실패 목록을 함께 저장하며, 이 파일은 안전 후보나 자동 승인이 아닙니다.
+
+작은 방지턱 학습 표본이 부족할 때 `bump_shrink_probability`와
+`bump_shrink_scale_range`(기본 [0.35, 0.7])를 실험할 수 있습니다.
+`bump_shrink_max_pixels`(기본 2048) 이하 양성 프레임만 줄이며, 이미지 바깥은
+reflect padding, 정답 바깥은 ignore255로 둡니다. nearest로 줄인 정답 방지턱이
+모두 사라지면 원본 프레임을 사용합니다. 기본 probability 0으로 비활성화됩니다.

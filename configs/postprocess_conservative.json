@@ -1,0 +1,12 @@
+{
+  "bump_probability": 0.75,
+  "bump_margin": 0.25,
+  "bump_min_area": 48,
+  "lane_max_island_area": 32,
+  "lane_max_parent_fraction": 0.08,
+  "lane_neighborhood_radius": 3,
+  "lane_min_support": 12,
+  "lane_neighbor_agreement": 0.90,
+  "lane_max_score_margin": 0.30,
+  "lane_min_opposite_probability": 0.15
+}
