@@ -22,6 +22,7 @@ pinky-lane-segmentation/
 │   └── train_5class_cpu.json
 ├── docs/
 ├── examples/dataset_manifest.json
+├── experiments/v13/          v13 학습 · 128줄 입력 · drivable 실험 코드
 ├── scripts/check_public_source.py
 ├── tests/
 ├── src/pinky_lane/
@@ -157,6 +158,7 @@ pre-commit은 Gitleaks `v8.30.1`과 `scripts/check_public_source.py`를 실행�
 - [데이터셋 형식](docs/dataset_format.md)
 - [모델 및 학습](docs/model_and_training.md)
 - [아키텍처 요약](docs/architecture-brief.md)
+- [v13 학습과 128줄 입력 · drivable 실험](experiments/v13/README.md)
 
 ## 모델 변경의 방지턱 오류 비교
 

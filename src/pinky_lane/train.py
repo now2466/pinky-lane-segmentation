@@ -19,6 +19,22 @@ from .models import ARCHITECTURES, CLASSES, LaneUNet
 from .sampling import CompleteRepeatSampler
 
 
+class ValidationROI(torch.utils.data.Dataset):
+    """Validation labels above ``top`` become 255, matching the inference ROI (v13 run)."""
+
+    def __init__(self, dataset, top):
+        self.dataset, self.top, self.rows = dataset, top, dataset.rows
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        image, labels, policy, group = self.dataset[index]
+        labels = labels.clone()
+        labels[:self.top] = 255
+        return image, labels, policy, group
+
+
 def run(config, dataset_root, output=None, warm_start_path=None, device_name=None,
         epochs=None, dry_run=False):
     count = config["num_classes"]
@@ -83,7 +99,7 @@ def run(config, dataset_root, output=None, warm_start_path=None, device_name=Non
     torch.manual_seed(seed)
     audit = check_dataset(dataset_root, count)
     train_set = LaneDataset(dataset_root, "train", count, augmentation)
-    val_set = LaneDataset(dataset_root, "val", count)
+    val_set = ValidationROI(LaneDataset(dataset_root, "val", count), ignore_top)
     pixel_counts = np.zeros(count, dtype=np.int64)
     frame_weights = []
     repeat_counts = []
