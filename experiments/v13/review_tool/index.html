@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drivable 검수</title>
+<style>
+:root{--bg:#16181b;--panel:#1f2226;--line:#33373c;--ink:#e8eaec;--mute:#9aa2a9;--acc:#4f8cff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,'Noto Sans KR',sans-serif;display:flex;height:100vh;overflow:hidden}
+#side{width:300px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--panel)}
+#side header{padding:10px 12px;border-bottom:1px solid var(--line)}
+#side select,#side input{width:100%;background:#111;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px;margin-top:6px}
+#list{flex:1;overflow:auto}
+.item{padding:6px 12px;border-bottom:1px solid #26292d;cursor:pointer;display:flex;gap:8px;align-items:center}
+.item:hover{background:#262a2f}.item.cur{background:#2c3644}
+.dot{width:9px;height:9px;border-radius:50%;flex:none;background:#555}
+.dot.done{background:#3fbf5f}.dot.hold{background:#e3b341}.dot.exclude{background:#e5534b}
+.badge{font-size:11px;color:#111;background:#e3b341;border-radius:4px;padding:0 5px}
+.badge.u{background:#d26bd6}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+#bar button{background:#2a2e33;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 9px;cursor:pointer}
+#bar button.on{border-color:var(--acc);background:#22324d}
+#bar .sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+#stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;position:relative}
+#wrap{position:relative}
+canvas{display:block;image-rendering:pixelated}
+#ov{position:absolute;left:0;top:0;cursor:crosshair}
+#info{padding:6px 12px;border-top:1px solid var(--line);color:var(--mute);font-size:13px;display:flex;gap:16px;flex-wrap:wrap}
+#help{color:var(--mute);font-size:12px;padding:8px 12px;border-top:1px solid var(--line);line-height:1.6}
+kbd{background:#2a2e33;border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:11px}
+#toast{position:fixed;right:16px;bottom:16px;background:#2c3644;padding:8px 12px;border-radius:8px;display:none}
+</style>
+</head>
+<body>
+<aside id="side">
+  <header>
+    <b>Drivable 검수</b> <span id="prog" style="color:var(--mute)"></span>
+    <select id="filter">
+      <option value="todo">확인 필요 (U·메모) 미완료</option>
+      <option value="undone" selected>미완료 전체</option>
+      <option value="all">전체</option>
+      <option value="done">완료</option>
+      <option value="hold">보류</option>
+      <option value="exclude">제외</option>
+    </select>
+    <select id="split"><option value="">split 전체</option><option>train</option><option>val</option><option>test</option></select>
+  </header>
+  <div id="list"></div>
+</aside>
+<main id="main">
+  <div id="bar">
+    <b>칠할 값</b>
+    <button data-cls="5" class="on"><span class="sw" style="background:#00c800"></span>1 drivable</button>
+    <button data-cls="0"><span class="sw" style="background:#1e1e1e;border:1px solid #666"></span>2 아님</button>
+    <button data-cls="255"><span class="sw" style="background:#ff69b4"></span>3 모름</button>
+    <span class="sep"></span><b>도구</b>
+    <button data-tool="brush" class="on">B 브러시</button>
+    <button data-tool="poly">P 다각형</button>
+    <button data-tool="sam">S SAM</button>
+    <button data-tool="fill">G 구역 채우기</button>
+    <span class="sep"></span>
+    <button id="undo">Z 되돌리기</button>
+    <button id="toggle">Space 오버레이</button>
+    <button id="cmp">C 원본(rosy) 비교</button>
+    <span class="sep"></span>
+    <button id="bdone">F 완료</button><button id="bhold">H 보류</button><button id="bexcl">X 제외</button>
+  </div>
+  <div id="stage"><div id="wrap"><canvas id="cv"></canvas><canvas id="ov"></canvas></div></div>
+  <div id="info"><span id="fname"></span><span id="note"></span><span id="pos"></span><span id="brushinfo"></span></div>
+  <div id="help">색: 초록 drivable · 진회색 아님 · 분홍 모름 · 하늘색 왼쪽 차선 · 주황 오른쪽 차선 · 자홍 횡단보도 · 노랑 방지턱<br>
+    <kbd>←</kbd><kbd>→</kbd> 이전·다음 (자동 저장) · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 칠할 값 · <kbd>[</kbd><kbd>]</kbd> 브러시 크기 · 브러시: 드래그 ·
+    다각형: 클릭으로 점, <kbd>Enter</kbd> 채우기, <kbd>Esc</kbd> 취소 ·
+    SAM: 왼클릭 = 포함 점, 오른클릭 = 제외 점, <kbd>Shift</kbd>+드래그 = 상자, <kbd>Enter</kbd> 적용, <kbd>Esc</kbd> 취소 ·
+    구역 채우기: 클릭한 곳과 같은 값으로 이어진 영역을 칠함 · 차선·횡단보도·방지턱 픽셀은 잠겨 있어 바뀌지 않음 ·
+    <kbd>Ctrl</kbd>+<kbd>S</kbd> 저장
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+const S = 3, Wd = 320, Ht = 240;
+const COLORS = {0:[30,30,30],1:[0,200,255],2:[255,150,0],3:[255,0,255],4:[255,230,0],5:[0,200,0],255:[255,105,180]};
+let frames = [], view = [], cur = -1, img = new Image(), mask = null, orig = null, lane = null;
+let cls = 5, tool = 'brush', brush = 6, overlay = true, compare = false, dirty = false;
+let undoStack = [], poly = [], samPts = [], samBox = null, samMask = null, drag = null;
+const cv = document.getElementById('cv'), ov = document.getElementById('ov');
+const ctx = cv.getContext('2d'), octx = ov.getContext('2d');
+cv.width = ov.width = Wd * S; cv.height = ov.height = Ht * S;
+ctx.imageSmoothingEnabled = false;
+
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',1600)}
+async function api(path, body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+function loadPng(url){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=Wd;c.height=Ht;const x=c.getContext('2d');x.drawImage(im,0,0);const d=x.getImageData(0,0,Wd,Ht).data;const a=new Uint8Array(Wd*Ht);for(let i=0;i<a.length;i++)a[i]=d[i*4];res(a)};im.onerror=rej;im.src=url})}
+function maskToPng(a){
+  // grayscale PNG via canvas is not possible directly; encode as RGBA and let the server read channel 0? Use a tiny PNG encoder instead.
+  return encodeGrayPng(a, Wd, Ht);
+}
+// ---- minimal grayscale PNG encoder (stored deflate blocks) ----
+const crcTable=(()=>{let t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xedb88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+function crc32(b){let c=0xffffffff;for(let i=0;i<b.length;i++)c=crcTable[(c^b[i])&255]^(c>>>8);return (c^0xffffffff)>>>0}
+function adler(b){let a=1,s=0;for(let i=0;i<b.length;i++){a=(a+b[i])%65521;s=(s+a)%65521}return ((s<<16)|a)>>>0}
+function encodeGrayPng(a,w,h){
+  const raw=new Uint8Array((w+1)*h);for(let y=0;y<h;y++){raw[y*(w+1)]=0;raw.set(a.subarray(y*w,(y+1)*w),y*(w+1)+1)}
+  const blocks=[];for(let i=0;i<raw.length;i+=65535){const n=Math.min(65535,raw.length-i);const last=i+n>=raw.length?1:0;const hb=new Uint8Array(5);hb[0]=last;hb[1]=n&255;hb[2]=n>>8;hb[3]=~n&255;hb[4]=(~n>>8)&255;blocks.push(hb,raw.subarray(i,i+n))}
+  const ad=adler(raw);const zl=[new Uint8Array([0x78,0x01]),...blocks,new Uint8Array([ad>>>24,(ad>>>16)&255,(ad>>>8)&255,ad&255])];
+  const idat=concat(zl);
+  const ihdr=new Uint8Array(13);const dv=new DataView(ihdr.buffer);dv.setUint32(0,w);dv.setUint32(4,h);ihdr[8]=8;ihdr[9]=0;ihdr[10]=0;ihdr[11]=0;ihdr[12]=0;
+  return concat([new Uint8Array([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',idat),chunk('IEND',new Uint8Array())]);
+}
+function chunk(t,d){const o=new Uint8Array(12+d.length);const dv=new DataView(o.buffer);dv.setUint32(0,d.length);for(let i=0;i<4;i++)o[4+i]=t.charCodeAt(i);o.set(d,8);dv.setUint32(8+d.length,crc32(o.subarray(4,8+d.length)));return o}
+function concat(arr){let n=0;arr.forEach(a=>n+=a.length);const o=new Uint8Array(n);let p=0;arr.forEach(a=>{o.set(a,p);p+=a.length});return o}
+function b64(u8){let s='';for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s)}
+
+function render(){
+  ctx.drawImage(img,0,0,Wd*S,Ht*S);
+  const show = compare ? orig : mask;
+  if(overlay && show){
+    const id=ctx.getImageData(0,0,Wd*S,Ht*S), d=id.data;
+    for(let y=0;y<Ht;y++)for(let x=0;x<Wd;x++){const v=show[y*Wd+x];const c=COLORS[v];if(!c)continue;const al=v===255?0.30:(v===0?0.62:0.48);
+      for(let dy=0;dy<S;dy++){let p=((y*S+dy)*Wd*S+x*S)*4;for(let dx=0;dx<S;dx++,p+=4){d[p]=d[p]*(1-al)+c[0]*al;d[p+1]=d[p+1]*(1-al)+c[1]*al;d[p+2]=d[p+2]*(1-al)+c[2]*al}}}
+    ctx.putImageData(id,0,0);
+  }
+  drawOverlay();
+}
+function drawOverlay(){
+  octx.clearRect(0,0,ov.width,ov.height);
+  if(samMask){const id=octx.createImageData(Wd*S,Ht*S),d=id.data;const c=COLORS[cls];
+    for(let y=0;y<Ht;y++)for(let x=0;x<Wd;x++){if(!samMask[y*Wd+x])continue;for(let dy=0;dy<S;dy++){let p=((y*S+dy)*Wd*S+x*S)*4;for(let dx=0;dx<S;dx++,p+=4){d[p]=c[0];d[p+1]=c[1];d[p+2]=c[2];d[p+3]=140}}}
+    octx.putImageData(id,0,0)}
+  if(poly.length){octx.strokeStyle='#fff';octx.lineWidth=2;octx.beginPath();poly.forEach((p,i)=>i?octx.lineTo(p[0]*S,p[1]*S):octx.moveTo(p[0]*S,p[1]*S));octx.stroke();poly.forEach(p=>{octx.fillStyle='#fff';octx.fillRect(p[0]*S-3,p[1]*S-3,6,6)})}
+  samPts.forEach(p=>{octx.beginPath();octx.arc(p[0]*S,p[1]*S,6,0,7);octx.fillStyle=p[2]?'#3fbf5f':'#e5534b';octx.fill();octx.strokeStyle='#000';octx.stroke()});
+  const b = samBox || (drag&&drag.box);
+  if(b){octx.strokeStyle='#ffd33d';octx.lineWidth=2;octx.strokeRect(b[0]*S,b[1]*S,(b[2]-b[0])*S,(b[3]-b[1])*S)}
+}
+function pushUndo(){undoStack.push(mask.slice());if(undoStack.length>40)undoStack.shift()}
+function setPx(x,y,v){if(x<0||y<0||x>=Wd||y>=Ht)return;const i=y*Wd+x;if(lane[i])return;mask[i]=v}
+function paintAt(x,y){const r=brush;for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++)if(dx*dx+dy*dy<=r*r)setPx(Math.round(x+dx),Math.round(y+dy),cls);dirty=true}
+function fillPoly(pts){const c=document.createElement('canvas');c.width=Wd;c.height=Ht;const x=c.getContext('2d');x.fillStyle='#fff';x.beginPath();pts.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));x.closePath();x.fill();const d=x.getImageData(0,0,Wd,Ht).data;pushUndo();for(let i=0;i<Wd*Ht;i++)if(d[i*4+3]>127&&!lane[i])mask[i]=cls;dirty=true}
+function floodFill(x0,y0){const i0=y0*Wd+x0;if(lane[i0])return;const from=mask[i0];if(from===cls)return;pushUndo();const st=[i0];while(st.length){const i=st.pop();if(mask[i]!==from||lane[i])continue;mask[i]=cls;const x=i%Wd,y=(i/Wd)|0;if(x>0)st.push(i-1);if(x<Wd-1)st.push(i+1);if(y>0)st.push(i-Wd);if(y<Ht-1)st.push(i+Wd)}dirty=true}
+function evPos(e){const r=ov.getBoundingClientRect();return [Math.max(0,Math.min(Wd-1,(e.clientX-r.left)/S)),Math.max(0,Math.min(Ht-1,(e.clientY-r.top)/S))]}
+
+ov.addEventListener('contextmenu',e=>e.preventDefault());
+ov.addEventListener('mousedown',e=>{if(!mask)return;const [x,y]=evPos(e);
+  if(tool==='brush'){pushUndo();drag={paint:true};paintAt(x,y);render()}
+  else if(tool==='poly'){poly.push([x,y]);drawOverlay()}
+  else if(tool==='fill'){floodFill(Math.round(x),Math.round(y));render()}
+  else if(tool==='sam'){if(e.shiftKey){drag={box:[x,y,x,y]}}else{samPts.push([x,y,e.button===2?0:1]);runSam()}}
+});
+ov.addEventListener('mousemove',e=>{const [x,y]=evPos(e);document.getElementById('pos').textContent=`(${x|0}, ${y|0})`;
+  if(!drag)return;if(drag.paint){paintAt(x,y);render()}else if(drag.box){drag.box[2]=x;drag.box[3]=y;drawOverlay()}});
+window.addEventListener('mouseup',()=>{if(drag&&drag.box){const b=drag.box;samBox=[Math.min(b[0],b[2]),Math.min(b[1],b[3]),Math.max(b[0],b[2]),Math.max(b[1],b[3])];drag=null;runSam()}else drag=null});
+
+async function runSam(){const f=view[cur];try{toast('SAM 계산 중…');const j=await api(`/api/sam/${f.id}`,{points:samPts,box:samBox});samMask=await loadPng('data:image/png;base64,'+j.png);drawOverlay();toast('SAM: Enter로 적용')}catch(err){toast('SAM 오류: '+err.message)}}
+function applySam(){if(!samMask)return;pushUndo();for(let i=0;i<Wd*Ht;i++)if(samMask[i]&&!lane[i])mask[i]=cls;dirty=true;clearTemp();render()}
+function clearTemp(){poly=[];samPts=[];samBox=null;samMask=null;drawOverlay()}
+
+async function save(status){const f=view[cur];if(!f)return;
+  if(!dirty&&!status)return;
+  try{await api(`/api/save/${f.id}`,{png:b64(maskToPng(mask)),status:status||''});dirty=false;f.saved=true;if(status)f.status=status;renderList();toast(status?`저장 · ${status}`:'저장됨')}catch(err){toast('저장 실패: '+err.message)}}
+async function setStatus(s){await save(s||'')}
+
+async function open(i){if(i<0||i>=view.length)return;if(dirty)await save();cur=i;const f=view[i];clearTemp();undoStack=[];
+  img=new Image();await new Promise(r=>{img.onload=r;img.src=`/img/${f.id}?t=${Date.now()}`});
+  [mask,orig]=await Promise.all([loadPng(`/mask/${f.id}?t=${Date.now()}`),loadPng(`/orig/${f.id}`)]);
+  lane=new Uint8Array(Wd*Ht);for(let k=0;k<lane.length;k++)lane[k]=(mask[k]>=1&&mask[k]<=4)?1:0;
+  document.getElementById('fname').textContent=`${f.id} · ${f.split} · ${f.image.split('/').pop()}`;
+  document.getElementById('note').textContent=(f.flag?`[${f.flag}] `:'')+(f.note||'');
+  renderList();render();
+  const el=document.querySelector('.item.cur');if(el)el.scrollIntoView({block:'nearest'})}
+
+function applyFilter(){const fv=document.getElementById('filter').value,sp=document.getElementById('split').value;
+  const curId=view[cur]&&view[cur].id;
+  view=frames.filter(f=>(!sp||f.split===sp)&&(fv==='all'||(fv==='undone'&&!f.status)||(fv==='todo'&&!f.status&&(f.flag||f.note))||f.status===fv));
+  cur=Math.max(0,view.findIndex(f=>f.id===curId));renderList()}
+function renderList(){const L=document.getElementById('list');L.innerHTML='';
+  view.forEach((f,i)=>{const d=document.createElement('div');d.className='item'+(i===cur?' cur':'');
+    d.innerHTML=`<span class="dot ${f.status||''}"></span><span>${f.id}</span>`+(f.flag?`<span class="badge ${f.flag==='U'?'u':''}">${f.flag}</span>`:'')+`<span style="color:var(--mute);font-size:12px">${f.split}</span>`;
+    d.onclick=()=>open(i);L.appendChild(d)});
+  const done=frames.filter(f=>f.status).length;document.getElementById('prog').textContent=`${done}/${frames.length} · 목록 ${view.length}`}
+
+document.querySelectorAll('[data-cls]').forEach(b=>b.onclick=()=>setCls(+b.dataset.cls));
+document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
+function setCls(v){cls=v;document.querySelectorAll('[data-cls]').forEach(b=>b.classList.toggle('on',+b.dataset.cls===v));drawOverlay()}
+function setTool(t){tool=t;clearTemp();document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t))}
+document.getElementById('undo').onclick=()=>{if(undoStack.length){mask=undoStack.pop();dirty=true;render()}};
+document.getElementById('toggle').onclick=()=>{overlay=!overlay;render()};
+document.getElementById('cmp').onclick=()=>{compare=!compare;document.getElementById('cmp').classList.toggle('on',compare);render()};
+document.getElementById('bdone').onclick=()=>setStatus('done');
+document.getElementById('bhold').onclick=()=>setStatus('hold');
+document.getElementById('bexcl').onclick=()=>setStatus('exclude');
+document.getElementById('filter').onchange=document.getElementById('split').onchange=()=>{applyFilter();open(cur)};
+function updBrush(){document.getElementById('brushinfo').textContent=`브러시 ${brush}px`}
+window.addEventListener('keydown',async e=>{if(e.target.tagName==='SELECT'||e.target.tagName==='INPUT')return;
+  if(e.ctrlKey&&e.key==='s'){e.preventDefault();save();return}
+  if(e.ctrlKey&&e.key==='z'){e.preventDefault();document.getElementById('undo').click();return}
+  const k=e.key;
+  if(k==='ArrowRight'){e.preventDefault();open(cur+1)}else if(k==='ArrowLeft'){e.preventDefault();open(cur-1)}
+  else if(k==='1')setCls(5);else if(k==='2')setCls(0);else if(k==='3')setCls(255);
+  else if(k==='b'||k==='B')setTool('brush');else if(k==='p'||k==='P')setTool('poly');else if(k==='s'||k==='S')setTool('sam');else if(k==='g'||k==='G')setTool('fill');
+  else if(k==='['){brush=Math.max(1,brush-1);updBrush()}else if(k===']'){brush=Math.min(40,brush+1);updBrush()}
+  else if(k==='z'||k==='Z')document.getElementById('undo').click();
+  else if(k===' '){e.preventDefault();overlay=!overlay;render()}
+  else if(k==='c'||k==='C')document.getElementById('cmp').click();
+  else if(k==='Enter'){if(tool==='poly'&&poly.length>2){fillPoly(poly);clearTemp();render()}else if(tool==='sam')applySam()}
+  else if(k==='Escape')clearTemp();
+  else if(k==='f'||k==='F'){await setStatus('done');open(cur+1)}else if(k==='h'||k==='H'){await setStatus('hold');open(cur+1)}else if(k==='x'||k==='X'){await setStatus('exclude');open(cur+1)}
+});
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+(async()=>{frames=await (await fetch('/api/list')).json();updBrush();applyFilter();if(view.length)open(0)})();
+</script>
+</body>
+</html>

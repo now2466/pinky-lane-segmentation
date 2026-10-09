@@ -1,0 +1,33 @@
+{
+  "num_classes": 5,
+  "inference": {"ignore_top": 110},
+  "augmentation": {
+    "lighting_probability": 1.0,
+    "brightness_delta": 0.06,
+    "contrast_range": [0.8, 1.2],
+    "horizontal_flip_probability": 0,
+    "rotation_probability": 0,
+    "rotation_degrees": 0
+  },
+  "training": {
+    "epochs": 30,
+    "batch_size": 16,
+    "learning_rate": 0.00003,
+    "weight_decay": 0.0001,
+    "dice_weight": 0.3,
+    "seed": 42,
+    "workers": 2,
+    "device": "cuda",
+    "amp": false,
+    "cpu_threads": 4,
+    "crosswalk_sample_multiplier": 1.0,
+    "selection_metric": "fixed_foreground",
+    "baseline_guard_max_iou_drop": 0.01,
+    "early_stopping_patience": 8,
+    "min_delta": 0.0001,
+    "lr_scheduler": "plateau",
+    "lr_scheduler_patience": 3,
+    "min_learning_rate": 0.000001,
+    "confirmed_background_dice": false
+  }
+}

@@ -10,12 +10,14 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from .augmentations import augment_image, validate
+from .augmentations import augment_bump_crop, augment_bump_shrink, augment_image, validate
 from .checkpoints import sha256
 
 LEGACY_POLICY = "legacy_partial_class4"
 FULL_POLICY = "fully_labeled_5class"
 FOUR_POLICY = "fully_labeled_4class"
+# Training-only sentinel: confirmed background, not a sixth semantic class.
+CONFIRMED_BACKGROUND = 254
 SCHEMAS = {
     "pinky-lane-dataset-v1", "lr-training-export-v1", "lr-training-export-v2",
     "lr-training-export-v3", "lr-training-export-v4", "lr-training-export-v5-partial-label",
@@ -86,6 +88,28 @@ class LaneDataset(Dataset):
             raise ValueError(f"Invalid labels for {policy}: {mask_path.name}")
         if not np.any(labels != 255):
             raise ValueError(f"Mask has no supervised pixels: {mask_path.name}")
+        polygons = row.get("confirmed_background_polygons")
+        if polygons is not None:
+            if self.split != "train" or self.num_classes != 5 or policy != LEGACY_POLICY:
+                raise ValueError("Confirmed background is only allowed in five-class legacy training")
+            if row.get("image_sha256") != sha256(image_path) or row.get("mask_sha256") != sha256(mask_path):
+                raise ValueError("Confirmed background requires matching image/mask hashes")
+            if not isinstance(polygons, list) or not polygons:
+                raise ValueError("Expected nonempty confirmed-background polygon list")
+            region = np.zeros(labels.shape, np.uint8)
+            for polygon in polygons:
+                points = np.asarray(polygon)
+                if (points.ndim != 2 or points.shape[1] != 2 or len(points) < 3
+                        or not np.issubdtype(points.dtype, np.integer)
+                        or np.any(points < 0) or np.any(points[:, 0] >= 320)
+                        or np.any(points[:, 1] >= 240)):
+                    raise ValueError("Polygon must contain >=3 integer (x,y) points inside 320x240")
+                cv2.fillPoly(region, [points.astype(np.int32)], 1)
+            # Never overwrite a lane, crosswalk, speed bump or ignored pixel.
+            selected = (region != 0) & (labels == 0)
+            if not np.any(selected):
+                raise ValueError("Confirmed-background polygons contain no background pixels")
+            labels[selected] = CONFIRMED_BACKGROUND
         return bgr, labels, policy
 
     def __getitem__(self, index):
@@ -93,6 +117,8 @@ class LaneDataset(Dataset):
         bgr, labels, policy = self.read(row)
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255
         if self.augmentation is not None:
+            rgb, labels = augment_bump_shrink(rgb, labels, self.augmentation)
+            rgb, labels = augment_bump_crop(rgb, labels, self.augmentation)
             rgb = augment_image(rgb, self.augmentation)
         group = row.get("source_video_sha256") or row.get("source_group") or "unspecified"
         return (torch.from_numpy(np.ascontiguousarray(rgb.transpose(2, 0, 1))),
@@ -120,6 +146,7 @@ def check_dataset(root, num_classes=5):
                 raise ValueError(f"Duplicate manifest row: {identity}")
             identities.add(identity)
             _, labels, policy = dataset.read(row)
+            labels = np.where(labels == CONFIRMED_BACKGROUND, 0, labels)
             policies[policy] += 1
             for class_id in np.unique(labels):
                 if class_id != 255:

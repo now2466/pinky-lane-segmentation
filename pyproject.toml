@@ -20,6 +20,7 @@ pinky-infer-image = "pinky_lane.infer_image:main"
 pinky-infer-video = "pinky_lane.infer_video:main"
 pinky-export = "pinky_lane.export:main"
 pinky-check-dataset = "pinky_lane.dataset:main"
+pinky-hard-cases = "pinky_lane.hard_cases:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
